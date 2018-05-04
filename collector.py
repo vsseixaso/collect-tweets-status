@@ -24,8 +24,8 @@ for line in file:
 
 # collect tweets status
 for matter in matters:
-	for tweet_id in xrange(2, len(matter)):
+	for i in xrange(2, len(matter)):
 		try:
-			print api.get_status(matter[tweet_id]).text
+			print api.get_status(matter[i]).text
 		except tweepy.error.TweepError:
 			print "TweepError: Tweet indisponível"
