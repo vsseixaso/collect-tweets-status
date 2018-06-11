@@ -3,7 +3,8 @@
 import tweepy
 import json
 import psycopg2
- 
+from time import sleep
+
 # authentications
 consumer_key = 'ZwU4lUEzjUIrCIN481bmd82KA'
 consumer_secret = '8vQvWZEqPAOn23TYru6fbdsR4OkfBP9XIql0zjq2FBKUwEltof'
@@ -25,19 +26,34 @@ def write_error_txt():
 	file.writelines("error")
 	file.close()
 
-def write_unavailable_txt(i, j):
-	id_tweet = matters[i][j]
-	id_matter = matters[i][0]
-	file.open('unavailable.txt', 'w')
+def write_unavailable_txt(tweet, matter):
+	file = open('unavailable.txt', 'a')
+	file.write(tweet + ' ' + matter + '\n')
+	file.close()
+
+def read_twitter_txt():
+	out = []
+	file = open('Twitter.txt', 'r')
+	for line in file:
+		aux = line.split()
+		aux[0] = aux[0][4:]
+		aux[1] = aux[1][6:]
+		out.append(aux)
+	file.close()
+	return out
 
 def read_unavailable_txt():
-	id_tweet = matters[i][j]
-	id_matter = matters[i][0]
-	fi
+	out = []
+	file = open('unavailable.txt', 'r')
+	for line in file:
+		aux = line.split()
+		out.append(aux)
+	file.close()
+	return out
 
 def read_last_tweet_txt():
-	file = open('last_tweet.txt', 'r')
 	out = []
+	file = open('last_tweet.txt', 'r')
 	for line in file:
 		aux = ''
 		for c in line:
@@ -47,66 +63,69 @@ def read_last_tweet_txt():
 				out.append(int(aux))
 				aux = ''
 		out.append(int(aux))
+	file.close()
 	return out
+
+def tweet_not_added(id_tweet):
+	cur.execute("SELECT * FROM tweet_status WHERE id_tweet = %s", (id_tweet,))
+	tweet = cur.fetchall()
+	if len(tweet) == 0: return True
+	else: return False
 
 def insert_into_matter(i):
     cur.execute("INSERT INTO matter (id_matter, label) VALUES (%s, %s)", (matters[i][0], matters[i][1]))
     conn.commit()
- 
-def insert_into_tweet_status(i, j):
-    cur.execute("INSERT INTO tweet_status (id_tweet, status, matter) VALUES (%s, %s, %s)", (matters[i][j], json.dumps(api.get_status(matters[i][j])), matters[i][0]))
-    conn.commit()
- 
-##############################################################
 
-matters = []
- 
-file = open('Twitter.txt', 'r')
-for line in file:
-    aux = line.split()
-    aux[0] = aux[0][4:]
-    aux[1] = aux[1][6:]
-    matters.append(aux)
-file.close()
+def insert_into_tweet_status(tweet, matter):
+	cur.execute("INSERT INTO tweet_status (id_tweet, status, matter) VALUES (%s, %s, %s)", (tweet, json.dumps(api.get_status(tweet)), matter))
+	conn.commit()
+
+def added_the_unavailable_again():
+	tweets = read_unavailable_txt()
+	for i in xrange(len(tweets)):
+		tweet = tweets[i][0]
+		matter = tweets[i][1]
+		if (tweet_not_added(tweet)):
+			try: 
+				insert_into_tweet_status(tweet, matter)
+				print 'Tweet %s adicionado.               ID MAtter: %S' %(tweet, matter)
+			except:
+				print 'TweepError: Tweet %s indisponível. ID Matter: %s' %(tweet, matter)
  
 # connecting to DB
 conn = psycopg2.connect("dbname=postgres user=postgres password=postgres host=localhost")
 cur = conn.cursor()
 
-# last_matter = control[0]
-# start_tweet = control[1] + 1
-
-# for i in xrange(start_tweet, len(matters[last_matter])):
-# 	try:
-# 		insert_into_tweet_status(last_matter, i)
-# 		write_last_tweet_txt(last_matter, i)
-# 		print 'Tweet %s adicionado' %matters[last_matter][i]
-# 	except tweepy.error.TweepError:
-# 		print 'TweepError: Tweet %s indisponível' %matters[last_matter][i]
-
+# collect of data
+matters = read_twitter_txt()
 control = read_last_tweet_txt()
 start_matter = control[0]
 start_tweet = control[1] + 1
-count_unavailable = 0
-is_break = False
+count_unavailables = 0
 
-# for i in xrange(start_matter, len(matters)):
-# 	for j in xrange(start_tweet, len(matters[i])):
-# 		try:
-# 			insert_into_tweet_status(i, j)
-# 			write_last_tweet_txt(i, j)
-# 			count_unavailable = 0
-# 			print 'Tweet %s adicionado' %matters[i][j]
-# 		except tweepy.error.TweepError:
-# 			count_unavailable += 1
-# 			if count_unavailable >= 20: is_break = True
-#			write_unavailable_txt(i, j)
-# 			print 'TweepError: Tweet %s indisponível' %matters[i][j]
-# 			if is_break: break
-# 	if is_break: break
-# 	else: start_tweet = 2
+for i in xrange(start_matter, len(matters)):
+	for j in xrange(start_tweet, len(matters[i])):
+		if count_unavailables == 10:
+			count_unavailables = 0
+			print 'Sleep: 120 segundos'
+			sleep(180)
+		tweet = matters[i][j]
+		matter = matters[i][0]
+		try:
+			if (tweet_not_added(tweet)):
+				insert_into_tweet_status(tweet, matter)
+				print 'Tweet %s adicionado.               ID Matter: %s' %(tweet, matter)
+			else:
+				print 'Tweet %s já foi adicionado.        ID Matter: %s' %(tweet, matter)
+			count_unavailables = 0
+		except tweepy.error.TweepError:
+			write_unavailable_txt(tweet, matter)
+			count_unavailables += 1
+			print 'TweepError: Tweet %s indisponível. ID Matter: %s' %(tweet, matter)
+		write_last_tweet_txt(i, j)
+	start_tweet = 2
 
-write_error_txt()
+added_the_unavailable_again()
 
 # close DB
 cur.close()
